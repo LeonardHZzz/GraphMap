@@ -117,3 +117,6 @@ def ejecutar_app() -> None:
         st.text(f"Radio de cobertura: {RADIO_M} m ({RADIO_M / 1000:.1f} km)")
         st.text(f"Centro: {CENTRO}")
         st.text(f"Factores de horario: {FACTORES_HORARIO}")
+
+if __name__ == "__main__":
+    ejecutar_app()

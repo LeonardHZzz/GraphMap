@@ -35,7 +35,7 @@ LUGARES_CLAVE_IDS = {
 }
 
 CENTRO    = "Parque Kennedy, Miraflores, Lima, Peru"
-RADIO_M   = 2500
+RADIO_M   = 3500
 CACHE_PATH = Path("grafo_miraflores.pkl")
 
 
