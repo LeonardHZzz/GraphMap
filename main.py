@@ -10,20 +10,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("UrbanGraph")
 
-def _verificar_deps() -> None:
-    faltantes = []
-    for pkg in ("osmnx", "folium", "graphviz", "streamlit", "networkx"):
-        try:
-            __import__(pkg)
-        except ImportError:
-            faltantes.append(pkg)
-    if faltantes:
-        log.error("Dependencias faltantes: %s", ", ".join(faltantes))
-        log.error("Instala con: pip install %s", " ".join(faltantes))
-        sys.exit(1)
-
-_verificar_deps()
-
 from logica import (
     GraphLoader, TrafficRouter, RouteVisualizer,
     FACTORES_HORARIO, RADIO_M, CENTRO
@@ -97,23 +83,21 @@ def modo_cli(usar_cache: bool = True) -> None:
 
 
 def modo_streamlit() -> None:
-    try:
-        import streamlit
-    except ImportError:
-        print("[ERROR] Instala streamlit: pip install streamlit")
-        sys.exit(1)
-    subprocess.run([sys.executable, "-m", "streamlit", "run", "interfaz.py"], check=True)
+    subprocess.run(
+        [sys.executable, "-m", "streamlit", "run", "interfaz.py"],
+        check=True
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="UrbanGraph Traffic — Bidirectional A* sobre Miraflores"
+        description="UrbanGraph Traffic — uso local unicamente"
     )
     parser.add_argument(
         "--modo",
         choices=["web", "cli"],
         default="web",
-        help="web: abre Streamlit (recomendado) | cli: terminal interactiva",
+        help="web: abre Streamlit | cli: terminal interactiva",
     )
     parser.add_argument(
         "--sin-cache",
