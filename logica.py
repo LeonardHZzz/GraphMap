@@ -8,14 +8,10 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
-try:
-    import osmnx as ox
-    import folium
-    from folium.plugins import HeatMap
-    import graphviz as gv
-    DEPS_OK = True
-except ImportError:
-    DEPS_OK = False
+import osmnx as ox
+import folium
+from folium.plugins import HeatMap
+import graphviz as gv
 
 log = logging.getLogger("UrbanGraph")
 

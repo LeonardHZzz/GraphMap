@@ -10,14 +10,24 @@ logging.basicConfig(
 )
 log = logging.getLogger("UrbanGraph")
 
-try:
-    from logica import (
-        GraphLoader, TrafficRouter, RouteVisualizer,
-        FACTORES_HORARIO, DEPS_OK, RADIO_M, CENTRO
-    )
-except ImportError as e:
-    print(f"[ERROR] No se pudo importar logica.py: {e}")
-    sys.exit(1)
+def _verificar_deps() -> None:
+    faltantes = []
+    for pkg in ("osmnx", "folium", "graphviz", "streamlit", "networkx"):
+        try:
+            __import__(pkg)
+        except ImportError:
+            faltantes.append(pkg)
+    if faltantes:
+        log.error("Dependencias faltantes: %s", ", ".join(faltantes))
+        log.error("Instala con: pip install %s", " ".join(faltantes))
+        sys.exit(1)
+
+_verificar_deps()
+
+from logica import (
+    GraphLoader, TrafficRouter, RouteVisualizer,
+    FACTORES_HORARIO, RADIO_M, CENTRO
+)
 
 
 def _pedir_indice(prompt: str, maximo: int) -> int:
@@ -111,11 +121,6 @@ def main() -> None:
         help="Descarga el grafo de OSM aunque exista cache local",
     )
     args = parser.parse_args()
-
-    if not DEPS_OK:
-        log.error("Dependencias faltantes. Ejecuta:")
-        log.error("  pip install osmnx folium graphviz streamlit networkx")
-        sys.exit(1)
 
     if args.modo == "web":
         modo_streamlit()

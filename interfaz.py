@@ -2,12 +2,7 @@ import logging
 import sys
 from pathlib import Path
 
-try:
-    import streamlit as st
-    STREAMLIT_OK = True
-except ImportError:
-    STREAMLIT_OK = False
-
+import streamlit as st
 from logica import GraphLoader, TrafficRouter, RouteVisualizer, FACTORES_HORARIO, RADIO_M, CENTRO
 
 log = logging.getLogger("UrbanGraph")
@@ -20,11 +15,6 @@ def _init_loader() -> GraphLoader:
 
 
 def ejecutar_app() -> None:
-    if not STREAMLIT_OK:
-        print("[ERROR] Instala streamlit: pip install streamlit")
-        print("Luego ejecuta: streamlit run interfaz.py")
-        sys.exit(1)
-
     st.set_page_config(
         page_title="UrbanGraph Traffic",
         page_icon="🗺",
