@@ -35,7 +35,7 @@ LUGARES_CLAVE_IDS = {
 }
 
 CENTRO     = "Parque Kennedy, Miraflores, Lima, Peru"
-RADIO_M    = 1500  # Radio optimizado para estabilidad en Streamlit Cloud
+RADIO_M    = 4500  
 CACHE_PATH = Path("grafo_miraflores.pkl")
 
 
