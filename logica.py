@@ -22,21 +22,21 @@ FACTORES_HORARIO = {
 }
 
 LUGARES_CLAVE_IDS = {
-    "Huaca Pucllana (Norte)":  262572626,
-    "Larcomar (Sur)":          262726656,
-    "Faro la Marina (Oeste)":  4347713104,
-    "Parque Kennedy (Centro)": 262577858,
-    "Zona Este (Benavides)":   262574499,
-    "Parque del Amor":         262574028,
-    "Bajada Balta":            263612203,
-    "Av. Arequipa / Angamos":  386842559,
-    "Playa Redondo":           314493121,
-    "Limite San Isidro":       262572619,
+    "Plaza San Martín (Cercado)":   295593853,
+    "Parque de la Reserva (Agua)":  4347209144,
+    "Estadio Nacional":             1584984240,
+    "Real Plaza Salaverry (Jesús M)": 3131754098,
+    "Parque Castilla (Lince)":      263592147,
+    "Av. Arequipa / Av. Javier Prado": 262575230,
+    "Centro Financiero (San Isidro)": 262576088,
+    "Plaza Bolognesi":              263435889,
+    "Campo de Marte":               314489432,
+    "Mercado Central (Lima)":       295594102
 }
 
-CENTRO     = "Parque Kennedy, Miraflores, Lima, Peru"
-RADIO_M    = 4500  
-CACHE_PATH = Path("grafo_miraflores.pkl")
+CENTRO     = "Lince, Lima, Peru"
+RADIO_M    = 6500  
+CACHE_PATH = Path("grafo_lima_centro.pkl")
 
 
 @dataclass
