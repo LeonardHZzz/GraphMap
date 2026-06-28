@@ -3,3 +3,4 @@ folium
 graphviz
 networkx
 streamlit
+streamlit-folium

@@ -34,8 +34,8 @@ LUGARES_CLAVE_IDS = {
     "Limite San Isidro":       262572619,
 }
 
-CENTRO    = "Parque Kennedy, Miraflores, Lima, Peru"
-RADIO_M   = 3500
+CENTRO     = "Parque Kennedy, Miraflores, Lima, Peru"
+RADIO_M    = 3500
 CACHE_PATH = Path("grafo_miraflores.pkl")
 
 
@@ -62,10 +62,12 @@ class GraphLoader:
         self.centro = centro
         self.radio  = radio
         random.seed(semilla)
-        self.G_osm        = None
-        self.grafo_ciudad = {}
-        self.coordenadas  = {}
+        self.G_osm         = None
+        self.grafo_ciudad  = {}
+        self.coordenadas   = {}
         self.lugares_clave = {}
+        # lat/lon originales por nodo (para distancia geográfica al clic)
+        self.latlon        = {}
 
     def cargar(self, usar_cache: bool = True) -> None:
         if usar_cache and CACHE_PATH.exists():
@@ -83,6 +85,23 @@ class GraphLoader:
         return (f"Intersecciones: {len(self.G_osm.nodes)} | "
                 f"Cuadras: {len(self.G_osm.edges)}")
 
+    def nodo_mas_cercano(self, lat: float, lon: float) -> int:
+        """Devuelve el nodo del grafo más cercano a las coordenadas (lat, lon) dadas."""
+        mejor_nodo = None
+        mejor_dist = float("inf")
+        for nodo, (nlon, nlat) in self.latlon.items():
+            d = math.sqrt((lat - nlat) ** 2 + (lon - nlon) ** 2)
+            if d < mejor_dist:
+                mejor_dist = d
+                mejor_nodo = nodo
+        return mejor_nodo
+
+    def bbox(self) -> tuple:
+        """Devuelve (lat_min, lat_max, lon_min, lon_max) del grafo cargado."""
+        lats = [v[1] for v in self.latlon.values()]
+        lons = [v[0] for v in self.latlon.values()]
+        return min(lats), max(lats), min(lons), max(lons)
+
     def _descargar_osm(self) -> None:
         log.info("Descargando OSM radio=%dm...", self.radio)
         self.G_osm = ox.graph_from_address(self.centro, dist=self.radio, network_type="drive")
@@ -90,19 +109,28 @@ class GraphLoader:
         for node, data in G_proy.nodes(data=True):
             self.coordenadas[node]  = (data["x"], data["y"])
             self.grafo_ciudad[node] = {}
+        for node, data in self.G_osm.nodes(data=True):
+            self.latlon[node] = (data["x"], data["y"])   # (lon, lat)
         for u, v, data in G_proy.edges(data=True):
             ruido = max(0.5, random.gauss(1.0, 0.2))
             self.grafo_ciudad[u][v] = {"dist": data["length"], "trafico": ruido}
 
     def _guardar_cache(self) -> None:
         with open(CACHE_PATH, "wb") as f:
-            pickle.dump((self.G_osm, self.grafo_ciudad, self.coordenadas), f)
+            pickle.dump((self.G_osm, self.grafo_ciudad, self.coordenadas, self.latlon), f)
         log.info("Cache guardado → %s", CACHE_PATH)
 
     def _cargar_cache(self) -> None:
         log.info("Cargando desde cache...")
         with open(CACHE_PATH, "rb") as f:
-            self.G_osm, self.grafo_ciudad, self.coordenadas = pickle.load(f)
+            data = pickle.load(f)
+        if len(data) == 4:
+            self.G_osm, self.grafo_ciudad, self.coordenadas, self.latlon = data
+        else:
+            # cache antiguo sin latlon
+            self.G_osm, self.grafo_ciudad, self.coordenadas = data
+            for node, d in self.G_osm.nodes(data=True):
+                self.latlon[node] = (d["x"], d["y"])
 
     def _resolver_lugares(self) -> None:
         nodos = list(self.G_osm.nodes)
@@ -132,8 +160,8 @@ class TrafficRouter:
     def bidirectional_a_star(self, inicio: int, destino: int, horario: str = "normal") -> ResultadoRuta:
         t0 = time.perf_counter()
 
-        g_fwd  = {inicio:  0.0}
-        g_bwd  = {destino: 0.0}
+        g_fwd   = {inicio:  0.0}
+        g_bwd   = {destino: 0.0}
         pad_fwd = {inicio:  None}
         pad_bwd = {destino: None}
         open_fwd = [(self._heuristica(inicio, destino), inicio)]
@@ -141,9 +169,9 @@ class TrafficRouter:
         cerrado_fwd: set = set()
         cerrado_bwd: set = set()
 
-        mejor_costo = float("inf")
+        mejor_costo    = float("inf")
         nodo_encuentro = None
-        vistos = 0
+        vistos         = 0
 
         grafo_inv = {}
         for u, vecinos in self._grafo.items():
@@ -159,7 +187,7 @@ class TrafficRouter:
             for v, info in self._grafo.get(u, {}).items():
                 ng = g_fwd[u] + self._peso(info["dist"], info["trafico"], horario)
                 if ng < g_fwd.get(v, float("inf")):
-                    g_fwd[v]  = ng
+                    g_fwd[v]   = ng
                     pad_fwd[v] = u
                     heapq.heappush(open_fwd, (ng + self._heuristica(v, destino), v))
                 if v in cerrado_bwd:
@@ -177,7 +205,7 @@ class TrafficRouter:
             for v, info in grafo_inv.get(u, {}).items():
                 ng = g_bwd[u] + self._peso(info["dist"], info["trafico"], horario)
                 if ng < g_bwd.get(v, float("inf")):
-                    g_bwd[v]  = ng
+                    g_bwd[v]   = ng
                     pad_bwd[v] = u
                     heapq.heappush(open_bwd, (ng + self._heuristica(v, inicio), v))
                 if v in cerrado_fwd:
@@ -231,7 +259,47 @@ class RouteVisualizer:
         self._grafo   = loader.grafo_ciudad
         self._lugares = loader.lugares_clave
 
-    def mapa_folium(self, resultado: ResultadoRuta, ruta_html: str = "ruta_optima.html") -> Optional[object]:
+    def mapa_base(self, origen_nodo=None, destino_nodo=None) -> folium.Map:
+        """
+        Mapa inicial sin ruta. Marca opcionalmente los nodos de origen y destino
+        ya seleccionados por el usuario (pines verdes / rojos fantasma).
+        """
+        centro = (self._G_osm.graph["center_lat"], self._G_osm.graph["center_lon"]) \
+                 if "center_lat" in self._G_osm.graph \
+                 else (-12.1219, -77.0299)   # Parque Kennedy fallback
+
+        m = folium.Map(location=centro, zoom_start=15, tiles="CartoDB positron")
+
+        instrucciones = """
+        <div style="position:fixed;top:14px;left:50%;transform:translateX(-50%);
+                    background:white;padding:8px 18px;border-radius:20px;
+                    box-shadow:0 2px 8px rgba(0,0,0,.25);
+                    font-family:Arial,sans-serif;font-size:13px;
+                    z-index:9999;pointer-events:none;">
+          🟢 <b>1er clic</b> = Origen &nbsp;|&nbsp; 🔴 <b>2do clic</b> = Destino
+        </div>"""
+        m.get_root().html.add_child(folium.Element(instrucciones))
+
+        if origen_nodo is not None:
+            d = self._G_osm.nodes[origen_nodo]
+            folium.Marker(
+                [d["y"], d["x"]], popup="Origen seleccionado",
+                icon=folium.Icon(color="green", icon="map-marker")
+            ).add_to(m)
+
+        if destino_nodo is not None:
+            d = self._G_osm.nodes[destino_nodo]
+            folium.Marker(
+                [d["y"], d["x"]], popup="Destino seleccionado",
+                icon=folium.Icon(color="red", icon="map-marker")
+            ).add_to(m)
+
+        return m
+
+    def mapa_folium(self, resultado: "ResultadoRuta",
+                    origen_nodo=None, destino_nodo=None,
+                    horario: str = "normal",
+                    ruta_html: str = "ruta_optima.html") -> Optional[folium.Map]:
         camino = resultado.camino
         if not camino:
             log.warning("Camino vacio.")
@@ -240,25 +308,21 @@ class RouteVisualizer:
         puntos = [(self._G_osm.nodes[n]["y"], self._G_osm.nodes[n]["x"]) for n in camino]
         m = folium.Map(location=puntos[0], zoom_start=15, tiles="CartoDB positron")
 
-        self._agregar_heatmap(m, resultado.horario)
+        self._agregar_heatmap(m, horario)
 
-        folium.PolyLine(puntos, color="royalblue", weight=6, opacity=0.9,
-                        tooltip=f"{resultado.algoritmo} | {resultado.horario}").add_to(m)
+        folium.PolyLine(
+            puntos, color="royalblue", weight=6, opacity=0.9,
+            tooltip=f"{resultado.algoritmo} | {resultado.horario}"
+        ).add_to(m)
 
-        folium.Marker(puntos[0],  popup="Origen",
-                      icon=folium.Icon(color="green", icon="play")).add_to(m)
-        folium.Marker(puntos[-1], popup="Destino",
-                      icon=folium.Icon(color="red",   icon="stop")).add_to(m)
-
-        nombre_por_id = {v: k for k, v in self._lugares.items()}
-        for nid, nombre in nombre_por_id.items():
-            if nid in self._G_osm.nodes:
-                d = self._G_osm.nodes[nid]
-                folium.CircleMarker(
-                    location=[d["y"], d["x"]], radius=6,
-                    color="orange", fill=True, fill_opacity=0.9,
-                    popup=nombre
-                ).add_to(m)
+        folium.Marker(
+            puntos[0], popup="Origen",
+            icon=folium.Icon(color="green", icon="play")
+        ).add_to(m)
+        folium.Marker(
+            puntos[-1], popup="Destino",
+            icon=folium.Icon(color="red", icon="stop")
+        ).add_to(m)
 
         info = f"""
         <div style="position:fixed;bottom:30px;left:30px;background:white;
@@ -277,7 +341,7 @@ class RouteVisualizer:
         log.info("Mapa guardado → %s", ruta_html)
         return m
 
-    def _agregar_heatmap(self, mapa: object, horario: str) -> None:
+    def _agregar_heatmap(self, mapa: folium.Map, horario: str) -> None:
         mod = FACTORES_HORARIO.get(horario, 1.0)
         puntos_calor = []
         for u, vecinos in self._grafo.items():
@@ -286,24 +350,23 @@ class RouteVisualizer:
                 if u in self._G_osm.nodes and v in self._G_osm.nodes:
                     lu = self._G_osm.nodes[u]
                     lv = self._G_osm.nodes[v]
-                    lat_mid = (lu["y"] + lv["y"]) / 2
-                    lon_mid = (lu["x"] + lv["x"]) / 2
-                    puntos_calor.append([lat_mid, lon_mid, peso_total])
-
+                    puntos_calor.append([
+                        (lu["y"] + lv["y"]) / 2,
+                        (lu["x"] + lv["x"]) / 2,
+                        peso_total,
+                    ])
         if puntos_calor:
-            max_peso = max(p[2] for p in puntos_calor)
-            puntos_norm = [[p[0], p[1], p[2] / max_peso] for p in puntos_calor]
+            max_p = max(p[2] for p in puntos_calor)
             HeatMap(
-                puntos_norm,
-                min_opacity=0.2,
-                radius=12,
-                blur=15,
+                [[p[0], p[1], p[2] / max_p] for p in puntos_calor],
+                min_opacity=0.2, radius=12, blur=15,
                 gradient={0.2: "blue", 0.5: "lime", 0.8: "orange", 1.0: "red"},
-                name="Congestion"
+                name="Congestion",
             ).add_to(mapa)
             folium.LayerControl().add_to(mapa)
 
-    def diagrama_graphviz(self, resultado: ResultadoRuta, ruta_png: str = "ruta_graphviz") -> Optional[object]:
+    def diagrama_graphviz(self, resultado: "ResultadoRuta",
+                          ruta_png: str = "ruta_graphviz") -> Optional[object]:
         camino = resultado.camino
         if not camino:
             log.warning("Camino vacio.")
@@ -314,7 +377,7 @@ class RouteVisualizer:
         dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica")
 
         for nodo in set(camino):
-            label     = nombre_por_id.get(nodo, f"#{str(nodo)[-4:]}")
+            label      = nombre_por_id.get(nodo, f"#{str(nodo)[-4:]}")
             es_extremo = nodo in (camino[0], camino[-1])
             dot.node(str(nodo), label=label, style="filled",
                      fillcolor="gold" if es_extremo else "lightblue",
