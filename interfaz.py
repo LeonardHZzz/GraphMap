@@ -9,19 +9,17 @@ from logica import GraphLoader, TrafficRouter, RouteVisualizer, FACTORES_HORARIO
 
 log = logging.getLogger("UrbanGraph")
 
-# ── Constantes de sesión ──────────────────────────────────────────────────────
 _FASE_ORIGEN  = "esperando_origen"
 _FASE_DESTINO = "esperando_destino"
 _FASE_LISTO   = "listo"
 
 
 def _init_session() -> None:
-    """Inicializa todas las claves de session_state la primera vez."""
     defaults = {
         "loader":          None,
         "router":          None,
         "visualizer":      None,
-        "fase":            _FASE_ORIGEN,   # estado del flujo de selección
+        "fase":            _FASE_ORIGEN,
         "origen_nodo":     None,
         "destino_nodo":    None,
         "origen_latlon":   None,
@@ -54,10 +52,10 @@ def _resetear_seleccion() -> None:
 def _instruccion_actual() -> str:
     fase = st.session_state.fase
     if fase == _FASE_ORIGEN:
-        return "🟢 Haz clic en el mapa para fijar el **origen**"
+        return "🟢 **Paso 1:** Haz clic en el mapa para establecer el punto de **Origen**."
     if fase == _FASE_DESTINO:
-        return "🔴 Haz clic en el mapa para fijar el **destino**"
-    return "✅ Origen y destino seleccionados — elige horario y calcula"
+        return "🔴 **Paso 2:** Haz clic para establecer el punto de **Destino**."
+    return "🚀 **Listo:** Puntos registrados. Selecciona el horario y ejecuta el cálculo estructural."
 
 
 def _procesar_clic(lat: float, lon: float) -> None:
@@ -72,7 +70,7 @@ def _procesar_clic(lat: float, lon: float) -> None:
 
     elif st.session_state.fase == _FASE_DESTINO:
         if nodo == st.session_state.origen_nodo:
-            st.warning("El punto seleccionado coincide con el origen. Elige otro.")
+            st.error("El nodo de destino no puede ser idéntico al de origen.")
             return
         st.session_state.destino_nodo   = nodo
         st.session_state.destino_latlon = (lat, lon)
@@ -81,176 +79,133 @@ def _procesar_clic(lat: float, lon: float) -> None:
 
 
 def _nombre_nodo(nodo: int) -> str:
-    """Devuelve el nombre del lugar clave si coincide, si no las coordenadas."""
     loader = st.session_state.loader
     for nombre, nid in loader.lugares_clave.items():
         if nid == nodo:
             return nombre
     d = loader.G_osm.nodes[nodo]
-    return f"({d['y']:.5f}, {d['x']:.5f})"
+    return f"Intersección ID: {nodo} ({d['y']:.4f}, {d['x']:.4f})"
 
 
 def ejecutar_app() -> None:
     st.set_page_config(
-        page_title="UrbanGraph Traffic",
+        page_title="UrbanGraph Traffic Analyzer",
         page_icon="🗺",
         layout="wide",
     )
 
     _init_session()
 
-    with st.spinner("Cargando red vial de Miraflores..."):
+    with st.spinner("Inicializando topología vial del distrito..."):
         _cargar_grafo()
 
     loader     = st.session_state.loader
     router     = st.session_state.router
     visualizer = st.session_state.visualizer
 
-    # ── Cabecera ──────────────────────────────────────────────────────────────
-    st.title("UrbanGraph Traffic")
-    st.caption(f"Red vial de Miraflores — radio {RADIO_M // 1000} km · Bidirectional A*")
+    st.title("🗺 UrbanGraph Traffic Analyzer")
+    st.caption("Modelado de Sistemas Complejos y Enrutamiento Dinámico Heurístico · Miraflores, Lima")
 
-    c1, c2 = st.columns(2)
-    c1.metric("Intersecciones (nodos)", f"{len(loader.G_osm.nodes):,}")
-    c2.metric("Cuadras (aristas)",      f"{len(loader.G_osm.edges):,}")
+    # Métrica de infraestructura vial
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Intersecciones (Nodos V)", f"{len(loader.G_osm.nodes):,}")
+    m2.metric("Tramos Viales (Aristas E)", f"{len(loader.G_osm.edges):,}")
+    m3.metric("Radio Operacional Mínimo", f"{RADIO_M} metros")
 
     st.divider()
 
-    # ── Panel de estado + controles ───────────────────────────────────────────
-    col_estado, col_ctrl = st.columns([3, 1])
+    col_mapa, col_controles = st.columns([2, 1])
 
-    with col_estado:
+    with col_controles:
+        st.subheader("⚙️ Parámetros de Control")
         st.info(_instruccion_actual())
 
         if st.session_state.origen_nodo is not None:
-            st.markdown(
-                f"🟢 **Origen:** {_nombre_nodo(st.session_state.origen_nodo)}"
-            )
+            st.success(f"**Origen:** {_nombre_nodo(st.session_state.origen_nodo)}")
         if st.session_state.destino_nodo is not None:
-            st.markdown(
-                f"🔴 **Destino:** {_nombre_nodo(st.session_state.destino_nodo)}"
-            )
+            st.error(f"**Destino:** {_nombre_nodo(st.session_state.destino_nodo)}")
 
-    with col_ctrl:
         horarios = list(FACTORES_HORARIO.keys())
         horario_sel = st.selectbox(
-            "Horario",
+            "Carga de Tráfico (Escenario Horario)",
             horarios,
-            format_func=lambda h: f"{h}  (×{FACTORES_HORARIO[h]})",
-            key="horario_sel",
+            format_func=lambda h: f"{h.replace('_', ' ').title()} (Factor de Peso: ×{FACTORES_HORARIO[h]})",
         )
+
         btn_calcular = st.button(
-            "Calcular ruta",
+            "Calcular Ruta Óptima",
             type="primary",
             disabled=(st.session_state.fase != _FASE_LISTO),
             use_container_width=True,
         )
-        st.button(
-            "🔄 Reiniciar",
-            on_click=_resetear_seleccion,
+        
+        st.button("🔄 Reiniciar Coordenadas", on_click=_resetear_seleccion, use_container_width=True)
+
+        if btn_calcular and st.session_state.fase == _FASE_LISTO:
+            with st.spinner("Computando Bidirectional A* con funciones de coste horarias..."):
+                resultado = router.bidirectional_a_star(
+                    st.session_state.origen_nodo,
+                    st.session_state.destino_nodo,
+                    horario_sel,
+                )
+            if not resultado.camino:
+                st.error("Error: Flujo de red interrumpido o aislado.")
+            else:
+                st.session_state.resultado = resultado
+
+        # Panel de Métricas de Rendimiento Algorítmico
+        if st.session_state.resultado is not None:
+            res = st.session_state.resultado
+            st.markdown("### 📊 Eficiencia de Búsqueda")
+            st.json({
+                "Algoritmo": res.algoritmo,
+                "Tiempo Procesamiento": f"{res.tiempo_ms:.3f} ms",
+                "Nodos Solución": len(res.camino),
+                "Nodos Totales Evaluados": res.nodos_vistos,
+                "Costo de la Función Objetivo": round(res.costo_total, 2)
+            })
+
+    with col_mapa:
+        resultado = st.session_state.resultado
+        mapa = visualizer.mapa_folium(resultado, st.session_state.origen_nodo, st.session_state.destino_nodo, horario_sel) \
+               if resultado is not None \
+               else visualizer.mapa_base(st.session_state.origen_nodo, st.session_state.destino_nodo)
+
+        mapa_data = st_folium(
+            mapa,
             use_container_width=True,
+            height=580,
+            returned_objects=["last_clicked"],
+            key="mapa_vial",
         )
 
-    # ── Calcular ruta ─────────────────────────────────────────────────────────
-    if btn_calcular and st.session_state.fase == _FASE_LISTO:
-        with st.spinner("Ejecutando Bidirectional A*..."):
-            resultado = router.bidirectional_a_star(
-                st.session_state.origen_nodo,
-                st.session_state.destino_nodo,
-                horario_sel,
-            )
-        if not resultado.camino:
-            st.error("No se encontró una ruta viable entre esos puntos.")
-        else:
-            st.session_state.resultado = resultado
-
-    # ── Métricas del resultado ────────────────────────────────────────────────
-    if st.session_state.resultado is not None:
-        res = st.session_state.resultado
-        st.success(
-            f"Ruta encontrada — "
-            f"{_nombre_nodo(st.session_state.origen_nodo)} → "
-            f"{_nombre_nodo(st.session_state.destino_nodo)}"
-        )
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Algoritmo",        res.algoritmo)
-        m2.metric("Nodos en ruta",    len(res.camino))
-        m3.metric("Nodos explorados", f"{res.nodos_vistos:,}")
-        m4.metric("Tiempo cálculo",   f"{res.tiempo_ms:.1f} ms")
-
-    st.divider()
-
-    # ── Mapa interactivo ──────────────────────────────────────────────────────
-    resultado = st.session_state.resultado
-
-    if resultado is not None:
-        # Mapa con ruta ya calculada
-        mapa = visualizer.mapa_folium(
-            resultado,
-            origen_nodo  = st.session_state.origen_nodo,
-            destino_nodo = st.session_state.destino_nodo,
-            horario      = horario_sel,
-        )
-    else:
-        # Mapa base — solo marcadores de selección parcial
-        mapa = visualizer.mapa_base(
-            origen_nodo  = st.session_state.origen_nodo,
-            destino_nodo = st.session_state.destino_nodo,
-        )
-
-    # Renderizar con st_folium — captura clics
-    mapa_data = st_folium(
-        mapa,
-        use_container_width=True,
-        height=540,
-        returned_objects=["last_clicked"],
-        key="mapa_principal",
-    )
-
-    # Procesar clic del usuario
-    clic = mapa_data.get("last_clicked") if mapa_data else None
-    if clic and st.session_state.fase in (_FASE_ORIGEN, _FASE_DESTINO):
-        lat = clic.get("lat")
-        lon = clic.get("lng")
-        if lat is not None and lon is not None:
-            _procesar_clic(lat, lon)
+        clic = mapa_data.get("last_clicked") if mapa_data else None
+        if clic and st.session_state.fase in (_FASE_ORIGEN, _FASE_DESTINO):
+            _procesar_clic(clic.get("lat"), clic.get("lng"))
             st.rerun()
 
-    # ── Tab de diagrama Graphviz (solo con resultado) ─────────────────────────
-    if resultado is not None:
-        st.divider()
-        with st.expander("📊 Ver diagrama estructural de la ruta"):
+    # Secciones Técnicas de Grafos Estructurales (Graphviz)
+    st.divider()
+    tab1, tab2 = st.tabs(["📊 Grafo de Caminos Alternativos Descartados", "🏙 Topología de Red General de la Ciudad"])
+    
+    with tab1:
+        if resultado is not None:
+            st.caption("Muestra la secuencia óptima elegida (azul/rojo) frente a las opciones de calles adyacentes evaluadas y descartadas (gris punteado) por congestión.")
             grafo_path = "ruta_graphviz"
             dot = visualizer.diagrama_graphviz(resultado, grafo_path)
-            if dot is not None:
-                png_path = Path(grafo_path + ".png")
-                if png_path.exists():
-                    st.image(str(png_path), use_container_width=True)
-                    with open(png_path, "rb") as f:
-                        st.download_button(
-                            label="Descargar diagrama PNG",
-                            data=f,
-                            file_name="ruta_graphviz.png",
-                            mime="image/png",
-                        )
+            if dot is not None and Path(grafo_path + ".png").exists():
+                st.image(grafo_path + ".png", use_container_width=True)
+        else:
+            st.info("Calcula una ruta para ver el análisis de descarte heurístico.")
 
-        with st.expander("🗺 Descargar mapa como HTML"):
-            mapa_path = "ruta_optima.html"
-            if Path(mapa_path).exists():
-                with open(mapa_path, "rb") as f:
-                    st.download_button(
-                        label="Descargar mapa HTML",
-                        data=f,
-                        file_name="ruta_optima.html",
-                        mime="text/html",
-                    )
-
-    # ── Resumen técnico ───────────────────────────────────────────────────────
-    with st.expander("ℹ️ Resumen del grafo cargado"):
-        st.text(loader.info())
-        st.text(f"Radio de cobertura: {RADIO_M} m ({RADIO_M / 1000:.1f} km)")
-        st.text(f"Centro: {CENTRO}")
-        st.text(f"Factores de horario: {FACTORES_HORARIO}")
+    with tab2:
+        st.caption("Representación abstracta y simplificada de las interconexiones globales del dataset vial mapeado en el backend.")
+        with st.spinner("Compilando mapa de adyacencias estructural..."):
+            dot_global = visualizer.generar_grafo_global_graphviz(max_nodos=50)
+            global_path = "grafo_global_ciudad"
+            dot_global.render(global_path, cleanup=True)
+            if Path(global_path + ".png").exists():
+                st.image(global_path + ".png", use_container_width=True)
 
 
 if __name__ == "__main__":
